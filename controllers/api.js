@@ -141,6 +141,8 @@ router.post('/create', postLimiter, async function (req, res) {
   logger.log('/create', [req.id]);
   if (!(req.body.partnerid && req.body.partnerid === 'bluewallet' && req.body.accounttype)) return errorBadArguments(res);
 
+  if (config.sunset) return errorSunset(res);
+
   let u = new User(redis, bitcoinclient, lightning);
   await u.create();
   await u.saveMetadata({ partnerid: req.body.partnerid, accounttype: req.body.accounttype, created_at: new Date().toISOString() });
@@ -177,6 +179,8 @@ router.post('/addinvoice', postLimiter, async function (req, res) {
   logger.log('/addinvoice', [req.id, 'userid: ' + u.getUserId()]);
 
   if (!req.body.amt || /*stupid NaN*/ !(req.body.amt > 0)) return errorBadArguments(res);
+
+  if (config.sunset) return errorSunsetAddInvoice(res);
 
   const invoice = new Invo(redis, bitcoinclient, lightning);
   const r_preimage = invoice.makePreimageHex();
@@ -343,6 +347,8 @@ router.get('/getbtc', async function (req, res) {
     return errorBadAuth(res);
   }
 
+  if (config.sunset) return errorSunsetAddInvoice(res);
+
   let address = await u.getAddress();
   if (!address) {
     await u.generateAddress();
@@ -500,6 +506,7 @@ router.get('/queryroutes/:source/:dest/:amt', async function (req, res) {
 
   let request = {
     pub_key: req.params.dest,
+    use_mission_control: true,
     amt: req.params.amt,
     source_pub_key: req.params.source,
   };
@@ -587,5 +594,21 @@ function errorPaymentFailed(res) {
     error: true,
     code: 10,
     message: 'Payment failed. Does the receiver have enough inbound capacity?',
+  });
+}
+
+function errorSunset(res) {
+  return res.send({
+    error: true,
+    code: 11,
+    message: 'This LNDHub instance is not accepting any more users',
+  });
+}
+
+function errorSunsetAddInvoice(res) {
+  return res.send({
+    error: true,
+    code: 11,
+    message: 'This LNDHub instance is scheduled to shut down. Withdraw any remaining funds',
   });
 }
